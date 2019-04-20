@@ -8,7 +8,7 @@ import (
 
 	"io"
 
-	"github.com/crewjam/saml"
+	"github.com/moisespsena-go/xsaml"
 )
 
 func randomBytes(n int) []byte {

@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/crewjam/saml"
+	"github.com/moisespsena-go/xsaml"
 	"github.com/dgrijalva/jwt-go"
 )
 
