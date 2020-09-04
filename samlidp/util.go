@@ -8,24 +8,10 @@ import (
 
 	"io"
 
-	"github.com/moisespsena-go/xsaml"
+	saml "github.com/moisespsena-go/xsaml"
 )
 
-func randomBytes(n int) []byte {
-	rv := make([]byte, n)
-	if _, err := saml.RandReader.Read(rv); err != nil {
-		panic(err)
-	}
-	return rv
-}
-
-func getSPMetadata(r io.Reader) (spMetadata *saml.EntityDescriptor, err error) {
-	var bytes []byte
-
-	if bytes, err = ioutil.ReadAll(r); err != nil {
-		return nil, err
-	}
-
+func ServiceProviderParseMetadata(bytes []byte) (spMetadata *saml.EntityDescriptor, err error) {
 	spMetadata = &saml.EntityDescriptor{}
 
 	if err := xml.Unmarshal(bytes, &spMetadata); err != nil {
@@ -50,4 +36,14 @@ func getSPMetadata(r io.Reader) (spMetadata *saml.EntityDescriptor, err error) {
 	}
 
 	return spMetadata, nil
+}
+
+func ServiceProviderParseMetadataR(r io.Reader) (spMetadata *saml.EntityDescriptor, err error) {
+	var bytes []byte
+
+	if bytes, err = ioutil.ReadAll(r); err != nil {
+		return nil, err
+	}
+
+	return ServiceProviderParseMetadata(bytes)
 }

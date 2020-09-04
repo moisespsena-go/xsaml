@@ -890,6 +890,18 @@ type Attribute struct {
 	Values       []AttributeValue `xml:"AttributeValue"`
 }
 
+func (a *Attribute) Update(other *Attribute) {
+	if other.FriendlyName != "" {
+		a.FriendlyName = other.FriendlyName
+	}
+	if other.NameFormat != "" {
+		a.NameFormat = other.NameFormat
+	}
+	if other.Values != nil {
+		a.Values = other.Values
+	}
+}
+
 // Element returns an etree.Element representing the object in XML form.
 func (a *Attribute) Element() *etree.Element {
 	el := etree.NewElement("saml:Attribute")

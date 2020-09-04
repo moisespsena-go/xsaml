@@ -198,7 +198,7 @@ func (test *IdentityProviderTest) TestCanProduceMetadata(c *C) {
 							},
 						},
 					},
-					NameIDFormats: []NameIDFormat{NameIDFormat("urn:oasis:names:tc:SAML:2.0:nameid-format:transient")},
+					NameIDFormats: []NameIDFormat{NameIDFormat("urn:oasis:names:tc:SAML:2.0:nameid-format:email")},
 				},
 				SingleSignOnServices: []Endpoint{
 					Endpoint{

@@ -81,6 +81,8 @@ type ServiceProvider struct {
 	// ForceAuthn allows you to force re-authentication of users even if the user
 	// has a SSO session at the IdP.
 	ForceAuthn *bool
+
+	MetadataFunc func(sp *ServiceProvider) *EntityDescriptor
 }
 
 // MaxIssueDelay is the longest allowed time between when a SAML assertion is
@@ -101,16 +103,43 @@ const DefaultCacheDuration = time.Hour * 24 * 1
 
 // Metadata returns the service provider metadata
 func (sp *ServiceProvider) Metadata() *EntityDescriptor {
+	if sp.MetadataFunc != nil {
+		return sp.MetadataFunc(sp)
+	}
+	gen := DefaultServiceProviderMetadataGenerator{
+		ValidDuration: sp.MetadataValidDuration,
+		AcsURL:        sp.AcsURL.String(),
+		MetadataURL:   sp.MetadataURL.String(),
+		Certificate:   sp.Certificate.Raw,
+	}
+	return gen.Generate()
+}
+
+type DefaultServiceProviderMetadataGenerator struct {
+	ValidDuration time.Duration
+	MetadataURL,
+	AcsURL,
+	CertificateString string
+	Certificate []byte
+}
+
+// DefaultSPMetadata returns the service provider default metadata
+func (this *DefaultServiceProviderMetadataGenerator) Generate() *EntityDescriptor {
 	validDuration := DefaultValidDuration
-	if sp.MetadataValidDuration > 0 {
-		validDuration = sp.MetadataValidDuration
+	if this.ValidDuration > 0 {
+		validDuration = this.ValidDuration
 	}
 
+	var cert string
+	if cert = this.CertificateString; cert == "" {
+		cert = base64.StdEncoding.EncodeToString(this.Certificate)
+	}
 	authnRequestsSigned := false
 	wantAssertionsSigned := true
 	validUntil := TimeNow().Add(validDuration)
+
 	return &EntityDescriptor{
-		EntityID:   sp.MetadataURL.String(),
+		EntityID:   this.MetadataURL,
 		ValidUntil: validUntil,
 
 		SPSSODescriptors: []SPSSODescriptor{
@@ -122,13 +151,13 @@ func (sp *ServiceProvider) Metadata() *EntityDescriptor {
 							{
 								Use: "signing",
 								KeyInfo: KeyInfo{
-									Certificate: base64.StdEncoding.EncodeToString(sp.Certificate.Raw),
+									Certificate: cert,
 								},
 							},
 							{
 								Use: "encryption",
 								KeyInfo: KeyInfo{
-									Certificate: base64.StdEncoding.EncodeToString(sp.Certificate.Raw),
+									Certificate: cert,
 								},
 								EncryptionMethods: []EncryptionMethod{
 									{Algorithm: "http://www.w3.org/2001/04/xmlenc#aes128-cbc"},
@@ -147,10 +176,23 @@ func (sp *ServiceProvider) Metadata() *EntityDescriptor {
 				AssertionConsumerServices: []IndexedEndpoint{
 					{
 						Binding:  HTTPPostBinding,
-						Location: sp.AcsURL.String(),
+						Location: this.AcsURL,
 						Index:    1,
 					},
 				},
+
+				AttributeConsumingServices: []AttributeConsumingService{{
+					ServiceNames:        []LocalizedName{{"en", "internal user identifier"}},
+					ServiceDescriptions: []LocalizedName{{"en", "requires user identifier for internal use"}},
+					RequestedAttributes: []RequestedAttribute{{
+						Attribute: Attribute{
+							FriendlyName: "id",
+							Name:         "id",
+							NameFormat:   "urn:oasis:names:tc:SAML:2.0:attrname-format:basic",
+						},
+						IsRequired: BoolPtr(true),
+					}},
+				}},
 			},
 		},
 	}
@@ -412,6 +454,7 @@ func (sp *ServiceProvider) ParseResponse(req *http.Request, possibleRequestIDs [
 	for _, possibleRequestID := range possibleRequestIDs {
 		if resp.InResponseTo == possibleRequestID {
 			requestIDvalid = true
+			break
 		}
 	}
 	if !requestIDvalid {

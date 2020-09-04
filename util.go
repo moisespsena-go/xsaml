@@ -27,3 +27,21 @@ func randomBytes(n int) []byte {
 	}
 	return rv
 }
+
+func RandomBytes(n ...int) []byte {
+	var N int
+	if len(n) == 0 || n[0] == 0 {
+		N = 32
+	} else {
+		N = n[0]
+	}
+	rv := make([]byte, N)
+	if _, err := RandReader.Read(rv); err != nil {
+		panic(err)
+	}
+	return rv
+}
+
+func BoolPtr(b bool) *bool {
+	return &b
+}

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/moisespsena-go/xsaml"
+	saml "github.com/moisespsena-go/xsaml"
 )
 
 // ClientState implements client side storage for state.
@@ -20,6 +20,11 @@ type ClientState interface {
 type ClientToken interface {
 	GetToken(r *http.Request) string
 	SetToken(w http.ResponseWriter, r *http.Request, value string, maxAge time.Duration)
+	DeleteToken(w http.ResponseWriter, r *http.Request) error
+}
+
+func DeleteToken(client ClientToken, w http.ResponseWriter, r *http.Request) {
+	client.SetToken(w, r, "", 0)
 }
 
 const stateCookiePrefix = "saml_"
@@ -99,6 +104,18 @@ func (c ClientCookies) GetToken(r *http.Request) string {
 		return ""
 	}
 	return cookie.Value
+}
+
+// DeleteToken deletes the defined token in the cookie.
+func (c ClientCookies) DeleteToken(w http.ResponseWriter, r *http.Request) error {
+	cookie, err := r.Cookie(c.Name)
+	if err != nil {
+		return err
+	}
+	cookie.Value = ""
+	cookie.Expires = time.Unix(1, 0) // past time as close to epoch as possible, but not zero time.Time{}
+	http.SetCookie(w, cookie)
+	return nil
 }
 
 var _ ClientState = ClientCookies{}

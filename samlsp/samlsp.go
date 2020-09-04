@@ -38,7 +38,7 @@ type Options struct {
 // New creates a new Middleware
 func New(opts Options) (*Middleware, error) {
 	metadataURL := opts.URL
-	metadataURL.Path = metadataURL.Path + "/saml/metadata"
+	metadataURL.Path = metadataURL.Path + "/saml/metadata.xml"
 	acsURL := opts.URL
 	acsURL.Path = acsURL.Path + "/saml/acs"
 	logr := opts.Logger

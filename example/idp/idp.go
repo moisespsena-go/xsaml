@@ -91,7 +91,7 @@ func main() {
 	}
 
 	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("hunter2"), bcrypt.DefaultCost)
-	err = idpServer.Store.Put("/users/alice", samlidp.User{Name: "alice",
+	err = idpServer.Store.Put("/users/alice", samlidp.UserImpl{Name: "alice",
 		HashedPassword: hashedPassword,
 		Groups:         []string{"Administrators", "Users"},
 		Email:          "alice@example.com",
@@ -103,7 +103,7 @@ func main() {
 		logr.Fatalf("%s", err)
 	}
 
-	err = idpServer.Store.Put("/users/bob", samlidp.User{
+	err = idpServer.Store.Put("/users/bob", samlidp.UserImpl{
 		Name:           "bob",
 		HashedPassword: hashedPassword,
 		Groups:         []string{"Users"},

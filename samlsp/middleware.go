@@ -4,11 +4,21 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/xml"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
-	"github.com/moisespsena-go/xsaml"
+	middleware2 "github.com/go-chi/chi/middleware"
+
+	"github.com/moisespsena-go/middleware"
+
+	"github.com/moisespsena-go/bid"
+
+	"github.com/pkg/errors"
+
 	"github.com/dgrijalva/jwt-go"
+	saml "github.com/moisespsena-go/xsaml"
 )
 
 // Middleware implements middleware than allows a web application
@@ -65,14 +75,14 @@ func randomBytes(n int) []byte {
 // on the URIs specified by m.ServiceProvider.MetadataURL and
 // m.ServiceProvider.AcsURL.
 func (m *Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == m.ServiceProvider.MetadataURL.Path {
+	switch r.URL.Path {
+	case m.ServiceProvider.MetadataURL.Path:
+		middleware.SetNoCache(w, r)
 		buf, _ := xml.MarshalIndent(m.ServiceProvider.Metadata(), "", "  ")
 		w.Header().Set("Content-Type", "application/samlmetadata+xml")
+		w.Header().Set("Content-Disposition", "attachment; filename=metadata.xml")
 		w.Write(buf)
-		return
-	}
-
-	if r.URL.Path == m.ServiceProvider.AcsURL.Path {
+	case m.ServiceProvider.AcsURL.Path:
 		r.ParseForm()
 		assertion, err := m.ServiceProvider.ParseResponse(r, m.getPossibleRequestIDs(r))
 		if err != nil {
@@ -83,12 +93,10 @@ func (m *Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 			return
 		}
-
 		m.Authorize(w, r, assertion)
-		return
+	default:
+		http.NotFoundHandler().ServeHTTP(w, r)
 	}
-
-	http.NotFoundHandler().ServeHTTP(w, r)
 }
 
 // RequireAccount is HTTP middleware that requires that each request be
@@ -166,7 +174,7 @@ func (m *Middleware) RequireAccount(handler http.Handler) http.Handler {
 		}
 		panic("not reached")
 	}
-	return http.HandlerFunc(fn)
+	return middleware2.NoCache(http.HandlerFunc(fn))
 }
 
 func (m *Middleware) getPossibleRequestIDs(r *http.Request) []string {
@@ -300,6 +308,38 @@ func (m *Middleware) GetAuthorizationToken(r *http.Request) *AuthorizationToken 
 	return &tokenClaims
 }
 
+func (m *Middleware) Logouter(opts ...*LogouterOptions) http.Handler {
+	var opt *LogouterOptions
+	for _, opt = range opts {
+	}
+	if opt == nil {
+		opt = &LogouterOptions{}
+	}
+
+	redirectTo := opt.RedirectToFunc
+	if redirectTo == nil {
+		redirectTo = func(r *http.Request) (url string, status int) {
+			return opt.RedirectTo, 0
+		}
+	}
+
+	callback := opt.CallbackUrlFunc
+	if callback == nil && opt.CallbackUrl != "" {
+		callback = func(r *http.Request) (url string) {
+			return opt.CallbackUrl
+		}
+	}
+	return middleware.NoCache(&Logouter{m, redirectTo, callback})
+}
+
+// GetAuthorizationToken is invoked by RequireAccount to determine if the request
+// is already authorized or if the user's browser should be redirected to the
+// SAML login flow. If the request is authorized, then the request context is
+// ammended with a Context object.
+func (m *Middleware) DeleteToken(w http.ResponseWriter, r *http.Request) (err error) {
+	return m.ClientToken.DeleteToken(w, r)
+}
+
 // RequireAttribute returns a middleware function that requires that the
 // SAML attribute `name` be set to `value`. This can be used to require
 // that a remote user be a member of a group. It relies on the Claims assigned
@@ -324,5 +364,79 @@ func RequireAttribute(name, value string) func(http.Handler) http.Handler {
 			http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 		}
 		return http.HandlerFunc(fn)
+	}
+}
+
+type LogouterOptions struct {
+	RedirectTo      string
+	CallbackUrl     string
+	RedirectToFunc  func(r *http.Request) (url string, status int)
+	CallbackUrlFunc func(r *http.Request) (url string)
+	RedirectStatus  int
+}
+
+type Logouter struct {
+	m           *Middleware
+	RedirectTo  func(r *http.Request) (url string, status int)
+	CallbackUrl func(r *http.Request) (url string)
+}
+
+func (this *Logouter) Logout(w http.ResponseWriter, r *http.Request, ok ...func()) {
+	if this.m.IsAuthorized(r) {
+		if err := this.m.DeleteToken(w, r); err != nil {
+			http.Error(w, errors.Wrap(err, "samlsp middleware logout failed").Error(),
+				http.StatusInternalServerError)
+			return
+		}
+
+		for _, ok := range ok {
+			ok()
+			return
+		}
+	}
+
+	var redirectTo, code = this.RedirectTo(r)
+	if redirectTo == "" {
+		redirectTo = "/"
+	}
+	if code == 0 {
+		code = http.StatusSeeOther
+	}
+	http.Redirect(w, r, redirectTo, code)
+}
+
+func (this *Logouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	middleware.SetNoCache(w, r)
+
+	if this.CallbackUrl != nil {
+		this.Logout(w, r, func() {
+			rawurl := this.CallbackUrl(r)
+			if strings.ContainsRune(rawurl, '?') {
+				rawurl += "&"
+			} else {
+				rawurl += "?"
+			}
+			var redirectTo, _ = this.RedirectTo(r)
+			if redirectTo == "" {
+				redirectTo = "/"
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			rawurl += bid.New().Hex() + "="
+			_, _ = w.Write([]byte(fmt.Sprintf(`<!DOCTYPE HTML>
+<html>
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+	<title></title>
+</head>
+<body>
+	<iframe style="display:none;position:absolute;top:-10px" src="%s"
+			frameborder="0" scrolling="no" marginheight="0" marginwidth="0" width="0" height="0" 
+			onload='window.location.href = %q'></iframe>
+</body>
+</html>`, rawurl, redirectTo)))
+		})
+		return
+	} else {
+		this.Logout(w, r)
 	}
 }

@@ -91,6 +91,18 @@ func (m *EntityDescriptor) UnmarshalXML(d *xml.Decoder, start xml.StartElement) 
 	return nil
 }
 
+func (m *EntityDescriptor) Bytes(utf8 ...bool) []byte {
+	var utf8v bool
+	for _, utf8v = range utf8 {
+	}
+
+	buf, _ := xml.MarshalIndent(m, "", "  ")
+	if utf8v {
+		return append([]byte(`<?xml version="1.0" encoding="UTF-8"?>\n`), buf...)
+	}
+	return buf
+}
+
 // Organization represents the SAML Organization object.
 //
 // See http://docs.oasis-open.org/security/saml/v2.0/saml-metadata-2.0-os.pdf §2.3.2.1
